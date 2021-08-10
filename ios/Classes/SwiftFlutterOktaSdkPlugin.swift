@@ -202,6 +202,7 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
     do {
       let oktaConfiguration: OktaOidcConfig = try OktaOidcConfig(with: configuration);
       self.oktaOidc = try OktaOidc(configuration: oktaConfiguration);
+        print(oktaConfiguration);
     } catch let error {
       print("okta object creation error \(error)");
       callback(error);
