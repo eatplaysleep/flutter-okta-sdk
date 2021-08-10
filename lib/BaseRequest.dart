@@ -14,6 +14,9 @@ class BaseRequest {
   /// The request scopes.
   List<String> scopes;
 
+  /// OIDC loginHint.
+  String? loginHint;
+
   String? userAgentTemplate;
 
   bool requireHardwareBackedKeyStore;
@@ -27,12 +30,13 @@ class BaseRequest {
       required this.endSessionRedirectUri,
       required this.redirectUrl,
       required this.scopes,
+      this.loginHint,
       this.userAgentTemplate,
       this.requireHardwareBackedKeyStore = false});
 }
 
 Map<String, Object?> convertBaseRequestToMap(BaseRequest baseRequest) {
-  return <String, Object?>{
+  var _baseRequest = <String, Object?>{
     'clientId': baseRequest.clientId,
     'issuer': baseRequest.issuer,
     'discoveryUrl': baseRequest.discoveryUrl,
@@ -42,4 +46,10 @@ Map<String, Object?> convertBaseRequestToMap(BaseRequest baseRequest) {
     'userAgentTemplate': baseRequest.userAgentTemplate,
     'requireHardwareBackedKeyStore': baseRequest.requireHardwareBackedKeyStore,
   };
+
+  if (baseRequest.loginHint != null) {
+    _baseRequest['loginHint'] = baseRequest.loginHint;
+  }
+
+  return _baseRequest;
 }
