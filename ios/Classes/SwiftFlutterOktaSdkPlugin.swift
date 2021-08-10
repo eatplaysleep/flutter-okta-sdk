@@ -48,6 +48,7 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         let endSessionRedirectUri: String? = oktaInfo["endSessionRedirectUri"] as? String;
         let redirectUrl: String? = oktaInfo["redirectUrl"] as? String;
         let scopeArray: [String]? = oktaInfo["scopes"] as? [String];
+        let loginHint: [String]? = oktaInfo["loginHint"] as? String;
 
         let scopes = scopeArray?.joined(separator: " ");
         
@@ -59,6 +60,10 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
           "redirectUri": redirectUrl!,
         ] as [String: String];
         
+        if (loginHint != nil) {
+            oktaConfigMap["loginHint"] = loginHint;
+        }
+
         createConfig(configuration: oktaConfigMap, callback: { error in
           if(error != nil) {
             result(error);
