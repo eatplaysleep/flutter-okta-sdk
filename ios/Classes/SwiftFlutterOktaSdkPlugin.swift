@@ -48,11 +48,11 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         let endSessionRedirectUri: String? = oktaInfo["endSessionRedirectUri"] as? String;
         let redirectUrl: String? = oktaInfo["redirectUrl"] as? String;
         let scopeArray: [String]? = oktaInfo["scopes"] as? [String];
-        let loginHint: [String]? = oktaInfo["loginHint"] as? String;
+        let loginHint: String? = oktaInfo["loginHint"] as? String;
 
         let scopes = scopeArray?.joined(separator: " ");
         
-        let oktaConfigMap: [String: String] = [
+        var oktaConfigMap: [String: String] = [
           "clientId": clientId!,
           "issuer": issuer!,
           "logoutRedirectUri": endSessionRedirectUri!,
