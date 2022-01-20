@@ -3,6 +3,7 @@ import UIKit
 
 import OktaOidc
 import OktaJWT
+import OktaSecureStorage
 
 let CHANNEL_NAME: String! = "com.sonikro.flutter_okta_sdk";
 
@@ -23,6 +24,8 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
 
   var _channel: FlutterMethodChannel;
   var oktaOidc: OktaOidc?
+  var secureStorage: OktaSecureStorage?
+    var useSecureStorage: Bool = false;
   var stateManager: OktaOidcStateManager?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -49,6 +52,7 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         let redirectUrl: String? = oktaInfo["redirectUrl"] as? String;
         let scopeArray: [String]? = oktaInfo["scopes"] as? [String];
         let loginHint: String? = oktaInfo["loginHint"] as? String;
+        let useSecureStorage: Bool? = oktaInfo["useSecureStorage"] as? Bool;
 
         let scopes = scopeArray?.joined(separator: " ");
         
@@ -62,6 +66,10 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         
         if (loginHint != nil) {
             oktaConfigMap["loginHint"] = loginHint;
+        }
+        
+        if (useSecureStorage != nil) {
+            self.useSecureStorage = useSecureStorage;
         }
 
         createConfig(configuration: oktaConfigMap, callback: { error in
@@ -201,8 +209,12 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
   func createConfig(configuration: [String:String], callback: ((Error?) -> (Void))) {
     do {
       let oktaConfiguration: OktaOidcConfig = try OktaOidcConfig(with: configuration);
+        
+        if (self.useSecureStorage) {
+            self.secureStorage = try OktaSecureStorage();
+        }
+        
       self.oktaOidc = try OktaOidc(configuration: oktaConfiguration);
-        print(oktaConfiguration);
     } catch let error {
       print("okta object creation error \(error)");
       callback(error);
@@ -220,13 +232,27 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         self.stateManager = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration)
 
       let options = ["iss": self.oktaOidc!.configuration.issuer, "exp": "true"]
-      let idTokenValidator = OktaJWTValidator(options)
-      do {
-          _ = try idTokenValidator.isValid(self.stateManager!.idToken!)
-      } catch {
-        signInWithBrowser(callback: callback);
-      }
-      callback(nil);
+
+        let idTokenValidator = OktaJWTValidator(options);
+        
+        if (self.useSecureStorage) {
+            self.readTokenManagerFromKeychain(completion: { success in
+                if success {
+                    do {
+                    _ = try refreshTokens(callback: callback);
+                    } catch {
+                        signInWithBrowser(callback: callback);
+                    }
+                }
+            });
+        }
+        
+        do {
+            _ = try idTokenValidator.isValid(self.stateManager!.idToken!)
+        } catch {
+          signInWithBrowser(callback: callback);
+        }
+        callback(nil);
     } else {
       signInWithBrowser(callback: callback);
     }
@@ -235,16 +261,34 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
   func signInWithBrowser(callback: @escaping ((Error?) -> Void)) {
     let viewController: UIViewController =
                 (UIApplication.shared.delegate?.window??.rootViewController)!;
-
     oktaOidc?.signInWithBrowser(from: viewController, callback: { [weak self] stateManager, error in
       if let error = error {
         print("Signin Error: \(error)");
         callback(error)
         return
       }
-      self?.stateManager?.clear()
-      self?.stateManager = stateManager
-      self?.stateManager?.writeToSecureStorage()
+        if (self.useSecureStorage) {
+            let authStateData = try? NSKeyedArchiver.archivedData(withRootObject: stateManager, requiringSecureCoding: false)
+            guard let authStateData = authStateData else {
+                callback?(FlutterOktaError(message: "Invalid authStateData"))
+                return
+            }
+            
+            do {
+                try self.secureStorage.set(data: authStateData,
+                                      forKey: "okta_user",
+                                      behindBiometrics: secureStorage.isTouchIDSupported() ||
+                                        secureStorage.isFaceIDSupported())
+            } catch let error = error {
+                print("Signin Error: \(error)");
+                callback(error)
+                return
+            }
+        } else {
+            self?.stateManager?.clear()
+            self?.stateManager = stateManager
+            self?.stateManager?.writeToSecureStorage()
+        }
       callback(nil)
     })
   }
@@ -264,6 +308,10 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
         callback?(error)
         return
       }
+      
+        if (self.useSecureStorage) {
+            try? self.secureStorage.clear();
+        }
       self?.stateManager?.clear()
       callback?(nil);
     })
@@ -287,6 +335,18 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
   }
   
   func isAuthenticated(callback: ((Bool) -> (Void))?) {
+    guard let oktaOidc = self.oktaOidc else { return }
+    
+    if (self.useSecureStorage) {
+        self.readTokenManagerFromKeychain();
+    } else {
+    
+        if let _ = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration)?.accessToken {
+            self.stateManager = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration)
+            callback?(true)
+            return
+        }
+    }
     if  let oktaOidc = oktaOidc,
       let _ = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration)?.accessToken {
       self.stateManager = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration)
@@ -386,6 +446,13 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
   }
   
   func refreshTokens(callback: ((String?, Error?) -> (Void))?) {
+    if let oktaOidc = oktaOidc {
+        if (useSecureStorage) {
+            
+        }
+    }
+    
+    
     if  let oktaOidc = oktaOidc,
       let sm = OktaOidcStateManager.readFromSecureStorage(for: oktaOidc.configuration) {
         sm.renew { stateManager, error in
@@ -401,4 +468,31 @@ public class SwiftFlutterOktaSdkPlugin: NSObject, FlutterPlugin {
       callback?(nil, FlutterOktaError(message: "User not logged in, cannot refresh"));
     }
   }
+    
+    func readTokenManagerFromKeychain(completion: @escaping (_ success: Bool) -> Void) {
+        DispatchQueue.global().async {
+            do {
+                let authStateDate = try self.secureStorage.getData(key: "okta_user")
+                guard let stateManager = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(authStateData) as? OktaOidcStateManager else {
+                    return
+                }
+                
+                self.stateManager = stateManager;
+                
+                DispatchQueue.main.async {
+                    completion(true);
+                }
+            } catch let error = error {
+                DispatchQueue.main.async {
+                    if error.code == errSecItemNotFound {
+                        print("Not found");
+                        return
+                    } else {
+                        print("Storage Error \(error)");
+                        completion(false);
+                    }
+                }
+            }
+        }
+    }
 }
